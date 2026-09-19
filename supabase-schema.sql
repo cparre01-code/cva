@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS public.consultores (
     telefone VARCHAR(50),
     cpf VARCHAR(50),
     
+    -- Acesso e Autenticação
+    senha VARCHAR(255) DEFAULT '123456', -- Senha de acesso do consultor ao sistema
+
     -- Poder de Negociação e Alçadas Comerciais
     desconto_maximo NUMERIC(5, 2) NOT NULL DEFAULT 5.00,    -- % máximo de desconto negociado permitido
     desconto_max_vista NUMERIC(5, 2) NOT NULL DEFAULT 5.00, -- % máximo de desconto à vista permitido
@@ -118,6 +121,54 @@ CREATE INDEX IF NOT EXISTS idx_products_brand ON public.products(brand);
 CREATE INDEX IF NOT EXISTS idx_products_category ON public.products(category);
 
 -- ==============================================================================
+-- 6. TABELA: fabricantes (Fabricantes, Marcas e Condições Comerciais)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.fabricantes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    nome_fantasia VARCHAR(150) NOT NULL UNIQUE,
+    razao_social VARCHAR(255),
+    cnpj VARCHAR(50),
+    estado_origem VARCHAR(2) DEFAULT 'SP',
+    contato_pedidos VARCHAR(255),
+    telefone_representante VARCHAR(50),
+    permite_faturamento_direto BOOLEAN DEFAULT true,
+    comissao_direta_percent NUMERIC(5, 2) DEFAULT 25.00,
+    permite_revenda BOOLEAN DEFAULT true,
+    desconto_maximo_permitido NUMERIC(5, 2) DEFAULT 10.00,
+    fator_markup_padrao NUMERIC(5, 2) DEFAULT 1.60,
+    condicao_pagamento_padrao VARCHAR(100) DEFAULT '28/56/84 DDL',
+    desconto_vista_fabrica NUMERIC(5, 2) DEFAULT 5.00,
+    prazo_faturamento_dias INTEGER DEFAULT 7,
+    -- Novas Políticas de Faturamento Direto (Prazos e Juros)
+    -- 1. Política do Cliente Final com a Fábrica
+    cliente_permite_vista BOOLEAN DEFAULT true,
+    cliente_desconto_vista NUMERIC(5, 2) DEFAULT 5.00,
+    cliente_permite_cartao BOOLEAN DEFAULT true,
+    cliente_cartao_max_parcelas INTEGER DEFAULT 10,
+    cliente_cartao_sem_juros_parcelas INTEGER DEFAULT 6,
+    cliente_cartao_taxa_juros NUMERIC(5, 2) DEFAULT 1.99,
+    -- 2. Política da Loja (CVA) com a Fábrica
+    loja_permite_vista BOOLEAN DEFAULT true,
+    loja_desconto_vista NUMERIC(5, 2) DEFAULT 5.00,
+    loja_permite_cartao BOOLEAN DEFAULT false,
+    loja_cartao_max_parcelas INTEGER DEFAULT 1,
+    loja_cartao_taxa_juros NUMERIC(5, 2) DEFAULT 0.00,
+    loja_permite_boleto BOOLEAN DEFAULT true,
+    loja_boleto_prazos VARCHAR(150) DEFAULT '28/56/84 DDL',
+    loja_boleto_max_parcelas INTEGER DEFAULT 3,
+    loja_prazo_repasse_comissao_dias INTEGER DEFAULT 15,
+    prazo_entrega_padrao VARCHAR(100) DEFAULT '30 a 45 dias úteis',
+    garantia_meses INTEGER DEFAULT 36,
+    tipo_frete_padrao VARCHAR(10) DEFAULT 'CIF',
+    obs_frete TEXT DEFAULT 'Frete incluso para Campo Grande / MS',
+    ativo BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fabricantes_nome ON public.fabricantes(nome_fantasia);
+
+-- ==============================================================================
 -- 5. FUNÇÃO E TRIGGER PARA ATUALIZAÇÃO AUTOMÁTICA DE `updated_at`
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
@@ -146,6 +197,12 @@ CREATE TRIGGER trigger_consultores_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS trigger_fabricantes_updated_at ON public.fabricantes;
+CREATE TRIGGER trigger_fabricantes_updated_at
+    BEFORE UPDATE ON public.fabricantes
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
 -- ==============================================================================
 -- 7. HABILITAÇÃO DO ROW LEVEL SECURITY (RLS)
 -- ==============================================================================
@@ -153,6 +210,7 @@ ALTER TABLE public.budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consultores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fabricantes ENABLE ROW LEVEL SECURITY;
 
 -- ==============================================================================
 -- 8. POLÍTICAS DE RLS (Row Level Security)
@@ -201,7 +259,7 @@ WITH CHECK (true);
 
 CREATE POLICY "Permitir exclusão de clientes" 
 ON public.clients FOR DELETE 
-TO authenticated 
+TO public, authenticated 
 USING (true);
 
 -- Política para a tabela `consultores`:
@@ -223,7 +281,29 @@ WITH CHECK (true);
 
 CREATE POLICY "Permitir exclusão de consultores" 
 ON public.consultores FOR DELETE 
-TO authenticated 
+TO public, authenticated 
+USING (true);
+
+-- Política para a tabela `profissionais`:
+CREATE POLICY "Permitir leitura de profissionais" 
+ON public.profissionais FOR SELECT 
+TO public, authenticated 
+USING (true);
+
+CREATE POLICY "Permitir inserção de profissionais" 
+ON public.profissionais FOR INSERT 
+TO public, authenticated 
+WITH CHECK (true);
+
+CREATE POLICY "Permitir atualização de profissionais" 
+ON public.profissionais FOR UPDATE 
+TO public, authenticated 
+USING (true) 
+WITH CHECK (true);
+
+CREATE POLICY "Permitir exclusão de profissionais" 
+ON public.profissionais FOR DELETE 
+TO public, authenticated 
 USING (true);
 
 -- Política para a tabela `products`:
@@ -232,11 +312,33 @@ ON public.products FOR SELECT
 TO public, authenticated 
 USING (true);
 
-CREATE POLICY "Permitir inserção e atualização de produtos" 
+CREATE POLICY "Permitir escrita de produtos" 
 ON public.products FOR ALL 
-TO authenticated 
+TO public, authenticated 
 USING (true) 
 WITH CHECK (true);
+
+-- Política para a tabela `fabricantes`:
+CREATE POLICY "Permitir leitura de fabricantes" 
+ON public.fabricantes FOR SELECT 
+TO public, authenticated 
+USING (true);
+
+CREATE POLICY "Permitir inserção de fabricantes" 
+ON public.fabricantes FOR INSERT 
+TO public, authenticated 
+WITH CHECK (true);
+
+CREATE POLICY "Permitir atualização de fabricantes" 
+ON public.fabricantes FOR UPDATE 
+TO public, authenticated 
+USING (true) 
+WITH CHECK (true);
+
+CREATE POLICY "Permitir exclusão de fabricantes" 
+ON public.fabricantes FOR DELETE 
+TO public, authenticated 
+USING (true);
 
 -- ==============================================================================
 -- 9. HABILITAR SINCRONIZAÇÃO EM TEMPO REAL (REALTIME)
@@ -245,7 +347,9 @@ WITH CHECK (true);
 ALTER PUBLICATION supabase_realtime ADD TABLE public.budgets;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.clients;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.consultores;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.profissionais;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.products;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.fabricantes;
 
 -- ==============================================================================
 -- 10. DADOS INICIAIS (SEED) PARA CONSULTORES DE VENDA
@@ -281,3 +385,80 @@ ON CONFLICT (nome) DO UPDATE SET
     comissao_padrao = EXCLUDED.comissao_padrao,
     pode_alterar_comissao = EXCLUDED.pode_alterar_comissao,
     pode_aprovar_excecao = EXCLUDED.pode_aprovar_excecao;
+
+-- ==============================================================================
+-- 11. TABELA: pedidos_fabrica (Gestão e Controle de Ordens de Compra por Marca)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.pedidos_fabrica (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    numero_pedido VARCHAR(100) NOT NULL UNIQUE,
+    budget_id UUID REFERENCES public.budgets(id) ON DELETE SET NULL,
+    num_orc VARCHAR(100) NOT NULL,
+    fabricante VARCHAR(100) NOT NULL,
+    faturamento_tipo VARCHAR(50) DEFAULT 'direto',
+    status VARCHAR(50) DEFAULT 'gerado',
+    data_emissao DATE DEFAULT CURRENT_DATE,
+    prazo_entrega_estimado VARCHAR(100),
+    previsao_faturamento DATE,
+    data_entrega_efetiva DATE,
+    consultor VARCHAR(150),
+    arquiteto_parceiro VARCHAR(150),
+    cliente_nome TEXT NOT NULL,
+    cliente_doc VARCHAR(100),
+    cliente_ie VARCHAR(100),
+    cliente_tel VARCHAR(100),
+    cliente_email VARCHAR(255),
+    cliente_logradouro TEXT,
+    cliente_num VARCHAR(50),
+    cliente_bairro VARCHAR(100),
+    cliente_cidade_uf VARCHAR(100) DEFAULT 'Campo Grande / MS',
+    cliente_cep VARCHAR(50),
+    forma_pagamento_fabrica VARCHAR(150),
+    desconto_negociado_percent NUMERIC(5, 2) DEFAULT 0.00,
+    desconto_vista_percent NUMERIC(5, 2) DEFAULT 0.00,
+    valor_base_bruto NUMERIC(12, 2) DEFAULT 0.00,
+    valor_desconto_negociado NUMERIC(12, 2) DEFAULT 0.00,
+    valor_desconto_vista NUMERIC(12, 2) DEFAULT 0.00,
+    valor_total_liquido NUMERIC(12, 2) DEFAULT 0.00,
+    quantidade_total_itens INTEGER DEFAULT 0,
+    itens JSONB NOT NULL DEFAULT '[]'::jsonb,
+    observacoes TEXT,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    user_email VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pedidos_fabrica_num_ped ON public.pedidos_fabrica(numero_pedido);
+CREATE INDEX IF NOT EXISTS idx_pedidos_fabrica_num_orc ON public.pedidos_fabrica(num_orc);
+CREATE INDEX IF NOT EXISTS idx_pedidos_fabrica_fabricante ON public.pedidos_fabrica(fabricante);
+CREATE INDEX IF NOT EXISTS idx_pedidos_fabrica_status ON public.pedidos_fabrica(status);
+
+ALTER TABLE public.pedidos_fabrica ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pedidos_fabrica' AND policyname = 'Permitir leitura de pedidos_fabrica') THEN
+        CREATE POLICY "Permitir leitura de pedidos_fabrica" ON public.pedidos_fabrica FOR SELECT TO public, authenticated USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pedidos_fabrica' AND policyname = 'Permitir inserção de pedidos_fabrica') THEN
+        CREATE POLICY "Permitir inserção de pedidos_fabrica" ON public.pedidos_fabrica FOR INSERT TO public, authenticated WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pedidos_fabrica' AND policyname = 'Permitir atualização de pedidos_fabrica') THEN
+        CREATE POLICY "Permitir atualização de pedidos_fabrica" ON public.pedidos_fabrica FOR UPDATE TO public, authenticated USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'pedidos_fabrica' AND policyname = 'Permitir exclusão de pedidos_fabrica') THEN
+        CREATE POLICY "Permitir exclusão de pedidos_fabrica" ON public.pedidos_fabrica FOR DELETE TO public, authenticated USING (true);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' AND tablename = 'pedidos_fabrica'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.pedidos_fabrica;
+    END IF;
+END $$;
+
